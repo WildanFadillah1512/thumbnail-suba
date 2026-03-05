@@ -2,5 +2,5 @@ streamlit
 Pillow
 yt-dlp
 opencv-python-headless
-google-generativeai
+google-genai
 groq
