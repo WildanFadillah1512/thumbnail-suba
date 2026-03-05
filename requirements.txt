@@ -1,0 +1,6 @@
+streamlit
+Pillow
+yt-dlp
+opencv-python-headless
+google-generativeai
+groq
