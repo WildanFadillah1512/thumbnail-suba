@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import re
+import io
 import zipfile
 import shutil
 import time
