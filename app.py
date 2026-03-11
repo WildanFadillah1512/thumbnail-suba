@@ -246,8 +246,29 @@ def validate_social_url(url):
 # VIDEO DOWNLOAD & FRAME EXTRACTION
 # ============================================================
 
+def _download_instagram_image_fallback(url, temp_dir):
+    import requests
+    import os
+    base_url = url.split('?')[0]
+    img_url = base_url if base_url.endswith('/') else base_url + '/'
+    img_url += 'media/?size=l'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    try:
+        res = requests.get(img_url, headers=headers, timeout=15)
+        if res.status_code == 200 and 'image' in res.headers.get('content-type', '').lower():
+            img_path = os.path.join(temp_dir, "image.jpg")
+            with open(img_path, 'wb') as f:
+                f.write(res.content)
+            return img_path
+    except Exception:
+        pass
+    return None
+
 def download_video(url):
     import yt_dlp
+    import requests
 
     temp_dir = tempfile.mkdtemp()
     output_path = os.path.join(temp_dir, "video.%(ext)s")
@@ -264,22 +285,35 @@ def download_video(url):
         }
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        title = info.get('title', '') or ''
-        description = info.get('description', '') or ''
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get('title', '') or ''
+            description = info.get('description', '') or ''
 
-    downloaded_file = None
-    for f in os.listdir(temp_dir):
-        filepath = os.path.join(temp_dir, f)
-        if os.path.isfile(filepath):
-            downloaded_file = filepath
-            break
+        downloaded_file = None
+        for f in os.listdir(temp_dir):
+            filepath = os.path.join(temp_dir, f)
+            if os.path.isfile(filepath):
+                downloaded_file = filepath
+                break
 
-    if not downloaded_file:
-        raise FileNotFoundError(f"Video tidak ditemukan di {temp_dir} setelah download")
+        if not downloaded_file:
+            if "instagram" in url.lower():
+                img_path = _download_instagram_image_fallback(url, temp_dir)
+                if img_path:
+                    return img_path, title or "Instagram Photo", description
+            raise FileNotFoundError(f"Video/Foto tidak ditemukan di {temp_dir} setelah download")
 
-    return downloaded_file, title, description
+        return downloaded_file, title, description
+
+    except yt_dlp.utils.DownloadError as e:
+        # Fallback for Instagram image posts
+        if "instagram" in url.lower() and "video" in str(e).lower():
+            img_path = _download_instagram_image_fallback(url, temp_dir)
+            if img_path:
+                return img_path, "Instagram Photo", ""
+        raise e
 
 
 def extract_best_frame(video_path):
@@ -714,14 +748,18 @@ with tab2:
                             st.write(f"⬇️ Downloading video dari: `{url[:60]}...`")
                             video_path, title, description = download_video(url)
                             temp_dirs.append(os.path.dirname(video_path))
-                            st.write(f"✅ Video berhasil didownload! Judul: **{title[:50]}**")
+                            st.write(f"✅ Video/Foto berhasil didownload! Judul: **{title[:50]}**")
 
-                            st.write("🖼️ Mengambil frame dari video...")
-                            if frame_count > 1:
-                                all_frames = extract_multiple_frames(video_path, num_frames=frame_count)
+                            st.write("🖼️ Menyiapkan frame...")
+                            if video_path.lower().endswith(('.jpg', '.jpeg', '.png')):
+                                all_frames = [Image.open(video_path).convert("RGB")]
                             else:
-                                single_frame = extract_best_frame(video_path)
-                                all_frames = [single_frame] if single_frame else []
+                                if frame_count > 1:
+                                    all_frames = extract_multiple_frames(video_path, num_frames=frame_count)
+                                else:
+                                    single_frame = extract_best_frame(video_path)
+                                    all_frames = [single_frame] if single_frame else []
+
 
                             if not all_frames:
                                 status.update(label=f"❌ Link #{link_num+1}: Gagal extract frame", state="error")
