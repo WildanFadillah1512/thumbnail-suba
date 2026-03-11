@@ -6,6 +6,7 @@ import re
 import io
 import zipfile
 import shutil
+import time
 from PIL import Image, ImageFilter, ImageDraw, ImageFont, ImageEnhance
 
 st.set_page_config(page_title="Thumbnail Generator", layout="wide")
@@ -312,8 +313,8 @@ def download_video(url):
         return downloaded_file, title, description
 
     except yt_dlp.utils.DownloadError as e:
-        # Fallback for Instagram image posts
-        if "instagram" in url.lower() and "video" in str(e).lower():
+        # Fallback for Instagram image posts or rate-limit blocks
+        if "instagram" in url.lower():
             img_path = _download_instagram_image_fallback(url, temp_dir)
             if img_path:
                 return img_path, "Instagram Photo", ""
@@ -749,6 +750,10 @@ with tab2:
 
                     with st.status(f"🔄 Memproses Link #{link_num+1}...", expanded=True) as status:
                         try:
+                            if idx > 0:
+                                st.write("⏳ Jeda 3 detik untuk menghindari blokir dari server Instagram/TikTok...")
+                                time.sleep(3)
+
                             st.write(f"⬇️ Downloading video dari: `{url[:60]}...`")
                             video_path, title, description = download_video(url)
                             temp_dirs.append(os.path.dirname(video_path))
