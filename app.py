@@ -21,6 +21,10 @@ def check_dependencies():
     except ImportError:
         missing.append("yt-dlp")
     try:
+        import requests
+    except ImportError:
+        missing.append("requests")
+    try:
         import cv2
     except ImportError:
         missing.append("opencv-python-headless")
