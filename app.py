@@ -3,13 +3,24 @@ import os
 import sys
 import tempfile
 import re
-import io
 import zipfile
 import shutil
 import time
+import random
 from PIL import Image, ImageFilter, ImageDraw, ImageFont, ImageEnhance
 
 st.set_page_config(page_title="Thumbnail Generator", layout="wide")
+
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0'
+]
+
+def get_random_ua():
+    return random.choice(USER_AGENTS)
 
 # ============================================================
 # DEPENDENCY CHECK
@@ -258,20 +269,27 @@ def _download_instagram_image_fallback(url, temp_dir):
     img_url = base_url if base_url.endswith('/') else base_url + '/'
     img_url += 'media/?size=l'
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': get_random_ua(),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
     }
     try:
         res = requests.get(img_url, headers=headers, timeout=15)
-        if res.status_code == 200 and 'image' in res.headers.get('content-type', '').lower():
-            img_path = os.path.join(temp_dir, "image.jpg")
-            with open(img_path, 'wb') as f:
-                f.write(res.content)
-            return img_path
-    except Exception:
-        pass
+        if res.status_code == 200:
+            if 'image' in res.headers.get('content-type', '').lower():
+                img_path = os.path.join(temp_dir, "image.jpg")
+                with open(img_path, 'wb') as f:
+                    f.write(res.content)
+                return img_path
+            else:
+                return f"ERROR: Dapat respons HTTP 200 tapi bukan format gambar. (Content-Type: {res.headers.get('content-type')})"
+        else:
+            return f"ERROR: Instagram menolak akses foto. (HTTP Status: {res.status_code})"
+    except Exception as e:
+        return f"ERROR: Gagal saat mencoba download fallback: {str(e)}"
     return None
 
-def download_video(url):
+def download_video(url, st_status=None):
     import yt_dlp
     import requests
 
@@ -286,7 +304,8 @@ def download_video(url):
         'socket_timeout': 30,
         'retries': 3,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': get_random_ua(),
+            'Accept-Language': 'en-US,en;q=0.9',
         }
     }
 
@@ -305,9 +324,12 @@ def download_video(url):
 
         if not downloaded_file:
             if "instagram" in url.lower():
-                img_path = _download_instagram_image_fallback(url, temp_dir)
-                if img_path:
-                    return img_path, title or "Instagram Photo", description
+                if st_status: st_status.update(label="⚠️ Menggunakan fallback metode 2 (Photo Link)...")
+                fallback_res = _download_instagram_image_fallback(url, temp_dir)
+                if fallback_res and not fallback_res.startswith("ERROR"):
+                    return fallback_res, title or "Instagram Photo", description
+                elif st_status and fallback_res:
+                    st.warning(f"Fallback Debug: {fallback_res}")
             raise FileNotFoundError(f"Video/Foto tidak ditemukan di {temp_dir} setelah download")
 
         return downloaded_file, title, description
@@ -315,9 +337,12 @@ def download_video(url):
     except yt_dlp.utils.DownloadError as e:
         # Fallback for Instagram image posts or rate-limit blocks
         if "instagram" in url.lower():
-            img_path = _download_instagram_image_fallback(url, temp_dir)
-            if img_path:
-                return img_path, "Instagram Photo", ""
+            if st_status: st_status.update(label="⚠️ Error yt-dlp. Mencoba fallback ke foto...")
+            fallback_res = _download_instagram_image_fallback(url, temp_dir)
+            if fallback_res and not fallback_res.startswith("ERROR"):
+                return fallback_res, "Instagram Photo", ""
+            elif st_status and fallback_res:
+                st.warning(f"Fallback Debug: {fallback_res}")
         raise e
 
 
@@ -751,11 +776,12 @@ with tab2:
                     with st.status(f"🔄 Memproses Link #{link_num+1}...", expanded=True) as status:
                         try:
                             if idx > 0:
-                                st.write("⏳ Jeda 3 detik untuk menghindari blokir dari server Instagram/TikTok...")
-                                time.sleep(3)
+                                delay = random.randint(3, 7)
+                                st.write(f"⏳ Jeda {delay} detik untuk menghindari blokir anti-robot Instagram...")
+                                time.sleep(delay)
 
-                            st.write(f"⬇️ Downloading video dari: `{url[:60]}...`")
-                            video_path, title, description = download_video(url)
+                            st.write(f"⬇️ Downloading konten dari: `{url[:60]}...`")
+                            video_path, title, description = download_video(url, st_status=status)
                             temp_dirs.append(os.path.dirname(video_path))
                             st.write(f"✅ Video/Foto berhasil didownload! Judul: **{title[:50]}**")
 
