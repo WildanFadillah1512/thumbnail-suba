@@ -47,8 +47,8 @@ if missing_deps:
 # ============================================================
 
 def format_text_top(text: str) -> str:
-    """Teks atas selalu UPPER CASE."""
-    return text.upper()
+    """Teks atas: Huruf awal kapital (Title Case)."""
+    return text.title()
 
 def format_text_bottom(text: str) -> str:
     """Teks bawah: Title Case."""
@@ -76,35 +76,12 @@ def center_crop_and_resize(img, target_width, target_height):
     return img.resize((target_width, target_height), Image.Resampling.LANCZOS)
 
 
-def get_max_width_for_font(draw, font_path, font_size, ref_chars=15):
+def get_font_for_target_width(draw, text, font_path, target_width, max_size=200, min_size=20):
     """
-    Hitung lebar maksimum berdasarkan lebar 15 karakter huruf kapital 'A'
-    pada ukuran font tertentu. Ini menjadi batas referensi teks agar konsisten.
+    Cari ukuran font agar lebar teks sedekat mungkin (<=) dengan target_width.
+    Ini membuat efek teks blok justified (rata tanpa lekukan).
     """
-    try:
-        font = ImageFont.truetype(font_path, font_size)
-    except:
-        font = ImageFont.load_default(size=font_size)
-    # Gunakan "A" * ref_chars sebagai referensi lebar maksimum
-    ref_text = "A" * ref_chars
-    bbox = draw.textbbox((0, 0), ref_text, font=font)
-    return bbox[2] - bbox[0]
-
-
-def get_font_fitted(draw, text, font_path, start_size, min_size=28, ref_chars=15):
-    """
-    Kembalikan font yang ukurannya pas sehingga teks tidak melebihi
-    lebar referensi 15 karakter pada ukuran font start_size.
-    
-    Logika:
-    - MAX_WIDTH = lebar 15 karakter 'A' pada start_size (ukuran font default)
-    - Jika teks <= 15 karakter → pakai start_size (font penuh)
-    - Jika teks > 15 karakter → kecilkan font sampai teks muat dalam MAX_WIDTH
-    """
-    # Hitung MAX_WIDTH berdasarkan 15 karakter pada ukuran font default
-    max_width = get_max_width_for_font(draw, font_path, start_size, ref_chars)
-
-    size = start_size
+    size = max_size
     while size >= min_size:
         try:
             font = ImageFont.truetype(font_path, size)
@@ -112,16 +89,17 @@ def get_font_fitted(draw, text, font_path, start_size, min_size=28, ref_chars=15
             font = ImageFont.load_default(size=size)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
-        if text_width <= max_width:
-            return font, size
+        if text_width <= target_width:
+            return font, size, text_width
         size -= 1
 
-    # Fallback: ukuran minimum
+    # Fallback
     try:
         font = ImageFont.truetype(font_path, min_size)
     except:
         font = ImageFont.load_default(size=min_size)
-    return font, min_size
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return font, min_size, bbox[2] - bbox[0]
 
 
 def generate_thumbnail(image_input, text_top, text_bottom):
@@ -162,13 +140,11 @@ def generate_thumbnail(image_input, text_top, text_bottom):
     # 4. Text Overlay
     draw = ImageDraw.Draw(final_img)
 
-    font_top_path = "helvetica-bold/Now/Now.ttf"
+    font_top_path = "poppins/Poppins-Bold.ttf"
     font_bottom_path = "poppins/Poppins-Bold.ttf"
 
-    # Ukuran font default (referensi untuk 15 karakter)
     FONT_TOP_DEFAULT = 77
     FONT_BOTTOM_DEFAULT = 64
-    REF_CHARS = 15  # Referensi: teks 15 karakter = pas dengan font default
 
     start_y = 900
     words = text_top.split()
@@ -178,10 +154,36 @@ def generate_thumbnail(image_input, text_top, text_bottom):
         rest_text = " " + " ".join(words[1:]) if len(words) > 1 else ""
         full_top_text = text_top
 
-        # --- Font teks atas: kecilkan jika > 15 karakter ---
-        font_top, _ = get_font_fitted(
-            draw, full_top_text, font_top_path,
-            start_size=FONT_TOP_DEFAULT, min_size=28, ref_chars=REF_CHARS
+        # Hitung lebar natural masing-masing teks pada ukuran default
+        try:
+            default_font_top = ImageFont.truetype(font_top_path, FONT_TOP_DEFAULT)
+        except:
+            default_font_top = ImageFont.load_default(size=FONT_TOP_DEFAULT)
+        try:
+            default_font_bottom = ImageFont.truetype(font_bottom_path, FONT_BOTTOM_DEFAULT)
+        except:
+            default_font_bottom = ImageFont.load_default(size=FONT_BOTTOM_DEFAULT)
+            
+        bbox_top = draw.textbbox((0, 0), full_top_text, font=default_font_top)
+        w_top = bbox_top[2] - bbox_top[0]
+        
+        bbox_bottom = draw.textbbox((0, 0), text_bottom, font=default_font_bottom)
+        w_bottom = bbox_bottom[2] - bbox_bottom[0]
+        
+        # Target width mengikuti lebar natural yang paling panjang (agar font tetap proporsional),
+        # kecilkan lagi dari 770px ke 700px
+        TARGET_WIDTH = max(w_top, w_bottom)
+        
+        # Beri batas minimum agar ukurannya tidak terlalu kecil, tapi tidak melebihi lebar frame (1080)
+        # 700px memberikan padding yang sangat lapang
+        if TARGET_WIDTH > 700:
+            TARGET_WIDTH = 700
+        elif TARGET_WIDTH < 600:  # Batas bawah diturunkan juga agar lebih pas
+            TARGET_WIDTH = 600
+
+        # --- Font teks atas (rata penuh target_width) ---
+        font_top, size_top, _ = get_font_for_target_width(
+            draw, full_top_text, font_top_path, target_width=TARGET_WIDTH, max_size=160
         )
 
         # Hitung posisi teks atas (2 warna)
@@ -200,20 +202,19 @@ def generate_thumbnail(image_input, text_top, text_bottom):
         if rest_text:
             draw.text((start_x + first_word_width, start_y), rest_text, font=font_top, fill="white")
 
-        # --- Font teks bawah: kecilkan jika > 15 karakter ---
-        font_bottom, _ = get_font_fitted(
-            draw, text_bottom, font_bottom_path,
-            start_size=FONT_BOTTOM_DEFAULT, min_size=28, ref_chars=REF_CHARS
+        # --- Font teks bawah (rata penuh target_width) ---
+        font_bottom, size_bottom, bottom_width = get_font_for_target_width(
+            draw, text_bottom, font_bottom_path, target_width=TARGET_WIDTH, max_size=180
         )
 
-        bottom_bbox = draw.textbbox((0, 0), text_bottom, font=font_bottom)
-        bottom_width = bottom_bbox[2] - bottom_bbox[0]
         bottom_x = (1080 - bottom_width) // 2
 
-        # Jarak antar baris: tinggi teks atas + padding 20px
+        # Jarak antar baris: padatkan sedikit jaraknya
         top_bbox = draw.textbbox((0, 0), full_top_text, font=font_top)
         top_height = top_bbox[3] - top_bbox[1]
-        bottom_y = start_y + top_height + 20
+        
+        # Tambahkan jarak (padding) antara teks atas dan bawah
+        bottom_y = start_y + top_height + 40
 
         draw.text((bottom_x, bottom_y), text_bottom, font=font_bottom, fill="white")
 
@@ -356,11 +357,11 @@ Judul: {title}
 Deskripsi: {description[:500] if description else 'Tidak ada deskripsi'}
 
 Buatkan 2 baris teks untuk thumbnail yang MENARIK PERHATIAN:
-- BARIS1: Teks utama highlight (MAKSIMAL 3 kata, provokatif/clickbait, sesuai audience premium)
-- BARIS2: Sub-teks penjelasan (MAKSIMAL 3 kata, sesuai audience premium)
+- BARIS1: Teks utama highlight (TEPAT 2 kata, provokatif/clickbait, sesuai audience premium)
+- BARIS2: Sub-teks penjelasan (TEPAT 2 kata, sesuai audience premium)
 
 ATURAN:
-- Total MAKSIMAL 6 kata
+- Total PAS 4 kata (2 kata atas, 2 kata bawah)
 - Bahasa Indonesia
 - Singkat, padat, provokatif
 - Jangan gunakan emoji
@@ -409,11 +410,11 @@ Judul: {title}
 Deskripsi: {description[:500] if description else 'Tidak ada deskripsi'}
 
 Buatkan 2 baris teks untuk thumbnail yang MENARIK PERHATIAN:
-- BARIS1: Teks utama highlight (MAKSIMAL 3 kata, provokatif/clickbait, sesuai audience premium)
-- BARIS2: Sub-teks penjelasan (MAKSIMAL 3 kata, sesuai audience premium)
+- BARIS1: Teks utama highlight (TEPAT 2 kata, provokatif/clickbait, sesuai audience premium)
+- BARIS2: Sub-teks penjelasan (TEPAT 2 kata, sesuai audience premium)
 
 ATURAN:
-- Total MAKSIMAL 6 kata
+- Total PAS 4 kata (2 kata atas, 2 kata bawah)
 - Bahasa Indonesia
 - Singkat, padat, provokatif
 - Jangan gunakan emoji
@@ -480,9 +481,9 @@ with tab1:
     with col1:
         uploaded_file = st.file_uploader("Upload Foto Mentah", type=["jpg", "png", "jpeg"])
 
-        text_top_raw = st.text_input("Teks Atas", value="VALUE ATAU NIAT", key="tab1_text_top")
-        st.caption("Kata pertama otomatis kuning · Teks atas → UPPERCASE · Teks bawah → Title Case · Font mengecil otomatis jika >15 karakter")
-        text_bottom_raw = st.text_input("Teks Bawah", value="Lebih Kuat Mana?", key="tab1_text_bottom")
+        text_top_raw = st.text_input("Teks Atas", value="Value Niat", key="tab1_text_top")
+        st.caption("Kata pertama otomatis kuning · Teks atas → Huruf Awal Kapital · Teks bawah → Title Case · Layar teks rata kiri-kanan otomatis")
+        text_bottom_raw = st.text_input("Teks Bawah", value="Lebih Kuat", key="tab1_text_bottom")
 
         st.caption(f"Preview: **{format_text_top(text_top_raw)}** ({len(text_top_raw)} karakter) / {format_text_bottom(text_bottom_raw)} ({len(text_bottom_raw)} karakter)")
 
@@ -581,9 +582,9 @@ with tab2:
         if mode == "Manual":
             col_t, col_b = st.columns(2)
             with col_t:
-                manual_top = st.text_input("Teks Atas (max 3 kata)", key=f"manual_top_{i}", max_chars=50)
+                manual_top = st.text_input("Teks Atas (tepat 2 kata)", key=f"manual_top_{i}", max_chars=50)
             with col_b:
-                manual_bottom = st.text_input("Teks Bawah (max 3 kata)", key=f"manual_bottom_{i}", max_chars=50)
+                manual_bottom = st.text_input("Teks Bawah (tepat 2 kata)", key=f"manual_bottom_{i}", max_chars=50)
             if manual_top or manual_bottom:
                 st.caption(f"Preview: **{format_text_top(manual_top)}** ({len(manual_top)} kar) / {format_text_bottom(manual_bottom)} ({len(manual_bottom)} kar)")
 
