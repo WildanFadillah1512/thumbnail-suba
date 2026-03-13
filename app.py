@@ -417,20 +417,22 @@ def generate_text_gemini(image, title, description, api_key):
 
 {AUDIENCE_CONTEXT}
 
-Berdasarkan gambar ini dan informasi video berikut:
+Berdasarkan GAMBAR (frame dari video) ini dan informasi video berikut:
 Judul: {title}
 Deskripsi: {description[:500] if description else 'Tidak ada deskripsi'}
 
 Buatkan 2 baris teks untuk thumbnail yang MENARIK PERHATIAN:
-- BARIS1: Teks utama highlight (TEPAT 2 kata, provokatif/clickbait, sesuai audience premium)
-- BARIS2: Sub-teks penjelasan (TEPAT 2 kata, sesuai audience premium)
+- BARIS1: Teks utama highlight (TEPAT 2 kata, bersifat provokatif/hook, menyimpulkan *value* besar atau pesan utama dari judul/deskripsi video)
+- BARIS2: Sub-teks penjelasan (TEPAT 2 kata, bersifat melengkapi baris 1, relevan dengan konteks desain kelas atas)
 
-ATURAN:
-- Total PAS 4 kata (2 kata atas, 2 kata bawah)
-- Bahasa Indonesia
-- Singkat, padat, provokatif
-- Jangan gunakan emoji
-- Tone: premium, aspiratif, profesional — cocok untuk orang yang mempertimbangkan membangun rumah mewah
+ATURAN SANGAT PENTING:
+- Total PAS 4 kata (2 kata atas, 2 kata bawah).
+- Teks HARUS berupa KESIMPULAN / HOOK UTAMA dari keseluruhan isi Judul dan Deskripsi. Gunakan GAMBAR hanya sebagai referensi bahwa ini adalah rumah/interior/arsitektur.
+- JANGAN TERUS-MENERUS MENGGUNAKAN KATA YANG SAMA. Hindari selalu menggunakan frasa basi seperti "Rumah Mewah", "Desain Menawan", atau "Rumah Idaman".
+- Gunakan variasi kosakata arsitektur/desain/lifestyle premium yang kaya (contoh: Fasad Tropis, Skala Ruang, Sirkulasi Udara, Detail Material, Sentuhan Kayu, Gaya Residensial, Oase Pribadi, Investasi Properti, dll), Disesuaikan dengan isi GAMBAR.
+- Bahasa Indonesia.
+- Singkat, padat, provokatif. Jangan gunakan emoji.
+- Tone: premium, aspiratif, profesional.
 
 Format output HANYA seperti ini (tanpa tambahan apapun):
 BARIS1: [teks]
@@ -444,6 +446,10 @@ BARIS2: [teks]"""
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
             types.Part.from_text(text=prompt),
         ],
+        config=types.GenerateContentConfig(
+            temperature=0.9,
+            top_p=0.95
+        )
     )
 
     text = response.text.strip()
@@ -475,15 +481,17 @@ Judul: {title}
 Deskripsi: {description[:500] if description else 'Tidak ada deskripsi'}
 
 Buatkan 2 baris teks untuk thumbnail yang MENARIK PERHATIAN:
-- BARIS1: Teks utama highlight (TEPAT 2 kata, provokatif/clickbait, sesuai audience premium)
-- BARIS2: Sub-teks penjelasan (TEPAT 2 kata, sesuai audience premium)
+- BARIS1: Teks utama highlight (TEPAT 2 kata, bersifat provokatif/hook, menyimpulkan *value* besar atau pesan utama dari judul/deskripsi video)
+- BARIS2: Sub-teks penjelasan (TEPAT 2 kata, bersifat melengkapi baris 1, relevan dengan konteks desain kelas atas)
 
-ATURAN:
-- Total PAS 4 kata (2 kata atas, 2 kata bawah)
-- Bahasa Indonesia
-- Singkat, padat, provokatif
-- Jangan gunakan emoji
-- Tone: premium, aspiratif, profesional — cocok untuk orang yang mempertimbangkan membangun rumah mewah
+ATURAN SANGAT PENTING:
+- Total PAS 4 kata (2 kata atas, 2 kata bawah).
+- Teks HARUS berupa KESIMPULAN / HOOK UTAMA dari keseluruhan isi Judul dan Deskripsi video. 
+- JANGAN TERUS-MENERUS MENGGUNAKAN KATA YANG SAMA. Hindari selalu menggunakan frasa basi seperti "Rumah Mewah", "Desain Menawan", atau "Rumah Idaman".
+- Gunakan variasi kosakata arsitektur/desain/lifestyle premium yang kaya (contoh: Fasad Tropis, Skala Ruang, Sirkulasi Udara, Detail Material, Sentuhan Kayu, Gaya Residensial, Oase Pribadi, Investasi Properti, dll) yang Paling sesuai dengan teks di atas.
+- Bahasa Indonesia.
+- Singkat, padat, provokatif. Jangan gunakan emoji.
+- Tone: premium, aspiratif, profesional.
 
 Format output HANYA seperti ini (tanpa tambahan apapun):
 BARIS1: [teks]
@@ -492,7 +500,7 @@ BARIS2: [teks]"""
     chat_completion = client.chat.completions.create(
         messages=[{"role": "user", "content": prompt}],
         model="llama-3.3-70b-versatile",
-        temperature=0.7,
+        temperature=0.9,
         max_tokens=100,
     )
 
